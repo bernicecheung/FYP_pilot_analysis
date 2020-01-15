@@ -1,0 +1,47 @@
+---
+title: "FYP_pilot_dataCleaning"
+author: "Bernice Cheung"
+date: "1/14/2020"
+output: html_document
+---
+# Set up the environment
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, results = 'hide', warning=FALSE}
+library(tidyverse)
+library(psych)
+```
+
+```{r raw data}
+# load raw data
+rawDf <- read.csv("../raw_data/raw_data.csv",stringsAsFactors = F)
+```
+
+# Organize the raw dataframe
+```{r organize raw df}
+# delete the first two rows of labels and questions 
+rawDF_cleaned <- rawDf[-c(1,2),]
+
+# exclude rows with unconsented participants
+rawDF_cleaned <- rawDF_cleaned %>% filter(C1 == "1,2")
+
+# write the data without the 2 rows
+write.csv(rawDF_cleaned,"../raw_data/raw_clean.csv",row.names = F)
+
+# reload the raw cleaned dataframe
+completeDF <- read.csv("../raw_data/raw_clean.csv",stringsAsFactors = F)
+```
+
+# Exclude participants
+
+## exclude participants based on task duration
+```{r}
+# Descriptive on duration
+describe(completeDF$Duration..in.seconds.)
+
+# Histograme
+hist(completeDF$Duration..in.seconds.)
+```
+
