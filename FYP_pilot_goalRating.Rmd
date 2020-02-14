@@ -230,6 +230,11 @@ colnames(factorScoreDF) <- c("commonality", "visibility", "ought_motivation", "d
 factorScoreDF$id <- goalDf_wide$id
 ```
 
+### subject level aggregated factor scores
+```{r}
+# calculate the average score for each factor within each subject
+subjectDf_factor <- aggregate(. ~ id, data = factorScoreDF, mean)
+```
 
 # Euclidean distance
 
@@ -334,13 +339,26 @@ id_pair <- unlist(mapply(rep, id, pairNum))
 # pairId <- unlist(mapply(seq,1,pairNum))
 
 pairDf_raw <- data.frame("subject_id" = id_pair,
-                     "distance" = distance_raw)
+                     "distance_raw" = distance_raw)
 
 # calculate mean distance per subject
 distDf_perSub_raw <- pairDf_raw %>%
   group_by(subject_id) %>%
-  mutate(meanDist = mean(distance_raw)) %>%
+  mutate(meanDist_raw = mean(distance_raw)) %>%
   dplyr :: select(-distance_raw)
 
-distDf_perSub_raw <- aggregate(meanDist ~ subject_id, data = distDf_perSub_raw, mean)
+distDf_perSub_raw <- aggregate(meanDist_raw ~ subject_id, data = distDf_perSub_raw, mean)
 ```
+
+```{r}
+# generate a multilevel model with subject as the random intercept
+mlm <-lmer(distance_raw ~ 1 + (1|subject_id), data = pairDf_raw)
+
+# calculate the variance partition coefficient and transform to ICC
+VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(icc=vcov/sum(vcov)) %>%
+  dplyr :: select(grp, icc)
+```
+
+
