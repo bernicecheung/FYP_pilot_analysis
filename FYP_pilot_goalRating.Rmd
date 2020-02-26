@@ -25,6 +25,7 @@ Load cleaned dataset, which contains 48 subjects and all variables related to go
 # load cleaned dataset for goal ratings
 goalDf <- read.csv("./input/goalRating.csv")
 goalDf_long <- read.csv("./input/goalRating_long_R.csv")
+indivDiffDf <- read.csv("./input/indivDiffDf.csv")
 ```
 
 # The number of listed goals
@@ -70,7 +71,7 @@ goalDf_long <- goalDf_long %>%
 ```
 
 ### Descriptive stats
-From this, we can see that our subject tend to report goals that are attractive, attainable and intrinsically motivated. Subjects are highly committed even though their current progress are widely distributed. 
+From this, we can see that our subject tend to report goals that are attractive, attainable and intrinsically motivated. Subjects are highly committed even though their current progress are widely distributed. Most variables are positively skewed. Attractive_achievement and approach_avoidance_R are highly skewed and lack of variance. 
 ```{r}
 # descriptive stats for each dimension 
 dimensionDf <- goalDf_long %>%
@@ -136,6 +137,7 @@ VarCorr(mlm) %>%
 
 ### EFA -- Raw rating score
 
+27 varialbes are included. Goal preogress variables and ordinal rating variables are not included: temporal_duration & end_state_specificity and frequency
 ```{r}
 # Exclude the 5 dimensions related to goal striving progress
 goalDf_R_wide <- goalDf_wide[,!names(goalDf_wide) %in% goal_striving]
@@ -169,9 +171,7 @@ nS <- nScree(x=ev$values, aparallel=ap$eigen$qevpea)
 plotnScree(nS)
 ```
 
-
-
-8 factors explain 48% of the variance. 
+vss suggest 4 factors, parallel suggested 6 factors and eigenvalues suggested 8 factors. we decided to use 6 factors because it fits better and the factors make sense
 ```{r}
 # extract 4 factors
 fa_raw_4 <-fa(r=corrM_raw, nfactors=4, rotate="promax", SMC=FALSE, fm="minres")
@@ -184,11 +184,21 @@ fa.sort(fa_raw_6)
 # extract 8 factors
 fa_raw_8 <-fa(r=corrM_raw, nfactors=8, rotate="promax", SMC=FALSE, fm="minres")
 fa.sort(fa_raw_8)
+```
 
+visualization & interfactor correlation
+```{r }
+# factor diagram
+fa.diagram(fa_raw_6)
+
+# interfactor correlation
+corr_fa <- fa_raw_6$Phi %>% as.data.frame() %>% rename(commonality = MR4, visibility = MR1, ought_motivation = MR2, difficulty = MR5, measurability = MR3, approach_avoidance_R = MR6)
+rownames(corr_fa) <- c("commonality", "importance", "ought_motivation", "difficulty", "measurability", "approach_avoidance_R")
+corr_fa
 ```
 
 
-### EFA -- within-subject deviation score
+### EFA -- centered (within-subject deviation score)
 ```{r fig.height=20, fig.width=20}
 # transform the ratings to the deviation score to the with-in subject mean on a given dimension
 id <- data.frame("id" = goalDf_R_wide$id)
@@ -205,7 +215,12 @@ corrM_meanCenter <- cor(goalDf_meanCenter,use = "pairwise")
 corrplot(corrM_meanCenter, method = "circle",number.cex = .7, order = "AOE", addCoef.col = "black",type = "upper")
 ```
 
+Determine number of factors vss suggested 4, parallel analysis suggested 5 and eigenevalues suggested 8
 ```{r}
+# use Very Simple Structure criterion
+vss(corrM_meanCenter, n = 10, rotate = "promax", diagonal = FALSE, fm = "minres", 
+n.obs=NULL,plot=TRUE,title="Very Simple Structure",use="pairwise",cor="cor")
+
 # Determine Number of Factors to Extract
 ev <- eigen(cor(goalDf_meanCenter, use = "pairwise"))
 ap <- parallel(subject=nrow(goalDf_meanCenter),var=ncol(goalDf_meanCenter),
@@ -215,7 +230,29 @@ plotnScree(nS)
 
 # extract 8 factors from pairwise correlational matrix, using 
 #factanal(factors = 5, covmat = corrM_meanCenter, rotation="varimax")
-fa_center <- fa(r=corrM_meanCenter, nfactors=8, rotate="promax", SMC=FALSE, fm="minres")
+
+```
+
+Extract factors
+```{r}
+fa_center_4 <- fa(r=corrM_meanCenter, nfactors=4, rotate="promax", SMC=FALSE, fm="minres")
+fa.sort(fa_center_4)
+
+fa_center_5 <- fa(r=corrM_meanCenter, nfactors=5, rotate="promax", SMC=FALSE, fm="minres")
+fa.sort(fa_center_5)
+
+fa_center_8 <- fa(r=corrM_meanCenter, nfactors=8, rotate="promax", SMC=FALSE, fm="minres")
+fa.sort(fa_center_8)
+```
+
+visualization
+```{r}
+fa.diagram(fa_center_5)
+
+# interfactor correlation
+corr_fa <- fa_center_5$Phi %>% as.data.frame() %>% rename(importance = MR1, desirability = MR4, ought_motivation = MR2, attainability = MR3, measurability = MR5)
+rownames(corr_fa) <- c("importance", "desirability", "ought_motivation", "attainability", "measurability")
+corr_fa
 ```
 
 ### weighted average score for each factor (based on fa_raw_6)
@@ -224,16 +261,89 @@ fa_center <- fa(r=corrM_meanCenter, nfactors=8, rotate="promax", SMC=FALSE, fm="
 factorScoreDF <-factor.scores(goalDf_EFA, fa_raw_6, Phi = NULL, method = "Thurstone",rho=NULL,impute="mean")$scores %>% as.data.frame()
 
 # Rename columns using the name of the primary variable
-colnames(factorScoreDF) <- c("commonality", "visibility", "ought_motivation", "difficulty", "measurability", "approach_avoidance_R")
+colnames(factorScoreDF) <- c("commonality", "importance", "ought_motivation", "difficulty", "measurability", "approach_avoidance_R")
 
 # add subject IDs
 factorScoreDF$id <- goalDf_wide$id
+```
+
+### variation partition on factor scores
+
+difficulty has the highest within-subjedct variation. Commonality & importance have the lowest
+```{r}
+# commonality 
+mlm <-lmer(commonality ~ 1 + (1|id), data = factorScoreDF)
+
+commonality <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(commonality=vcov/sum(vcov)) %>%
+  dplyr :: select(commonality)
+
+# importance 
+mlm <-lmer(importance ~ 1 + (1|id), data = factorScoreDF)
+
+importance <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(importance=vcov/sum(vcov)) %>%
+  dplyr :: select(importance)
+
+# ought_motivation 
+mlm <-lmer(ought_motivation ~ 1 + (1|id), data = factorScoreDF)
+
+ought_motivation <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(ought_motivation=vcov/sum(vcov)) %>%
+  dplyr :: select(ought_motivation)
+
+# difficulty 
+mlm <-lmer(difficulty ~ 1 + (1|id), data = factorScoreDF)
+
+difficulty <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(difficulty=vcov/sum(vcov)) %>%
+  dplyr :: select(difficulty)
+
+# measurability 
+mlm <-lmer(measurability ~ 1 + (1|id), data = factorScoreDF)
+
+measurability <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(measurability=vcov/sum(vcov)) %>%
+  dplyr :: select(measurability)
+
+# approach_avoidance_R 
+mlm <-lmer(approach_avoidance_R ~ 1 + (1|id), data = factorScoreDF)
+
+approach_avoidance_R <- VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(approach_avoidance_R=vcov/sum(vcov)) %>%
+  dplyr :: select(approach_avoidance_R)
+
+# combine the outputs into one data frame
+factorScore_icc <- data.frame("variation" = c("between subject", "within subject"))
+factorScore_icc <- bind_cols(factorScore_icc, commonality, importance, ought_motivation, difficulty, measurability, approach_avoidance_R)
+```
+
+### goal level correlation between factor scores and goal pursuit variables
+
+```{r fig.height=10, fig.width=10}
+# combine goal level data
+goalLevelDf <- cbind(factorScoreDF[,-7], goalDf_wide[,c("advancement", "commitment", "effort", "urgency", "initial_time_R")])
+
+# generate a correlational matrix 
+corrM_goalLevel <- cor(goalLevelDf,use = "pairwise")
+
+# visualization 
+corrplot(corrM_goalLevel, method = "circle",number.cex = .7, addCoef.col = "black",type = "upper")
 ```
 
 ### subject level aggregated factor scores
 ```{r}
 # calculate the average score for each factor within each subject
 subjectDf_factor <- aggregate(. ~ id, data = factorScoreDF, mean)
+
+# calculate the sd for each factor wihtin each subject
+subjectDf_factor_sd <- aggregate(. ~ id, data = factorScoreDF, sd)
 ```
 
 # Euclidean distance
@@ -242,7 +352,7 @@ subjectDf_factor <- aggregate(. ~ id, data = factorScoreDF, mean)
 use factor scores to calculate pairwise euclidean distance per subject
 ```{r}
 # split the dataset by IDs
-splitDf <- split( factorScoreDF, f = factorScoreDF$id )
+splitDf <- split( factorScoreDF, f = factorScoreDF$id)
 
 # apply the distance function to each subject
 output <- lapply(splitDf, function(x) dist(x,method = "euclidean", diag = FALSE, upper = FALSE))
@@ -268,10 +378,12 @@ pairDf <- data.frame("subject_id" = id_pair,
 # calculate mean distance per subject
 distDf_perSub <- pairDf %>%
   group_by(subject_id) %>%
-  mutate(meanDist = mean(distance)) %>%
+  mutate(distMean = mean(distance),
+         distSd = sd(distance)) %>%
   dplyr :: select(-distance)
 
-distDf_perSub <- aggregate(meanDist ~ subject_id, data = distDf_perSub, mean)
+distDf_perSub <- aggregate(cbind(distMean,distSd) ~ subject_id, data = distDf_perSub, mean)
+
 ```
 
 ### descriptive of pairwise distance
@@ -284,22 +396,22 @@ pairDf %>% ggplot(aes(x = distance)) +
                    colour = "black",
                    alpha  = .6)
 
-# descriptive of subject level distance
-describe(distDf_perSub$meanDist)
+# descriptive of subject level distance (raw score)
+describe(distDf_perSub$distMean)
 
-distDf_perSub %>% ggplot(aes(x = meanDist)) +
+distDf_perSub %>% ggplot(aes(x = distMean)) +
     geom_histogram(fill   = "orange",
                    colour = "black",
                    alpha  = .6)
 
-# generate a multilevel model with subject as the random intercept
-mlm <-lmer(distance ~ 1 + (1|subject_id), data = pairDf)
+# descriptive of subject level distance (variance score)
+describe(distDf_perSub$distSd)
 
-# calculate the variance partition coefficient and transform to ICC
-VarCorr(mlm) %>%
-  as_data_frame() %>%
-  mutate(icc=vcov/sum(vcov)) %>%
-  dplyr :: select(grp, icc)
+distDf_perSub %>% ggplot(aes(x = distSd)) +
+    geom_histogram(fill   = "orange",
+                   colour = "black",
+                   alpha  = .6)
+
 ```
 
 ### variance partition
@@ -350,6 +462,7 @@ distDf_perSub_raw <- pairDf_raw %>%
 distDf_perSub_raw <- aggregate(meanDist_raw ~ subject_id, data = distDf_perSub_raw, mean)
 ```
 
+### variance partition
 ```{r}
 # generate a multilevel model with subject as the random intercept
 mlm <-lmer(distance_raw ~ 1 + (1|subject_id), data = pairDf_raw)
@@ -361,4 +474,161 @@ VarCorr(mlm) %>%
   dplyr :: select(grp, icc)
 ```
 
+### subject level correlations (with raw factor scores)
+```{r fig.height=20, fig.width=20}
+# combine subject level data frame (individual differences, mean factor scores, mean distance)
+subjectDf <- left_join(subjectDf_factor, distDf_perSub, by = c("id" = "subject_id"))
+subjectDf <- left_join(subjectDf, indivDiffDf, by = "id")
 
+# generate a correlational matrix 
+corrM_subjectRaw <- cor(subjectDf[,-1],use = "pairwise")
+
+# visualization 
+corrplot(corrM_subjectRaw, method = "circle",number.cex = .7, addCoef.col = "black",type = "upper")
+```
+
+### subject level correlations (with variance)
+
+```{r fig.height=20, fig.width=20}
+# combine subject level data frame (individual differences, variance in factor scores, mean and sd in distance)
+subjectDf_sd <- left_join(subjectDf_factor_sd, distDf_perSub, by = c("id" = "subject_id"))
+subjectDf_sd <- left_join(subjectDf_sd, indivDiffDf, by = "id")
+
+# generate a correlational matrix 
+corrM_subjectSd <- cor(subjectDf_sd[,-1],use = "pairwise")
+
+# visualization 
+corrplot(corrM_subjectSd, method = "circle",number.cex = .7, addCoef.col = "black",type = "upper")
+```
+
+```{r}
+a <-lmer(rating ~ 1 + (1| id/goal), data = goalDf_long)
+summary(a)
+```
+
+# Mahalanobis distance
+
+### pair-wise distance
+Use the covariance matrix across all goal ratings to calculate pair-wise distance
+```{r}
+# set a function for calculating pairwise distiance
+mahalanobisFun <- function(df, cov) { 
+  MD <- combn(nrow(df), 2, function(x) mahalanobis(as.matrix(df[x[1],]), center = as.matrix(df[x[2],]), cov = cov))
+  return(tryCatch(MD, error=function(e) NULL))
+}
+```
+
+excluded 2 subjects who only have 1 goal
+```{r}
+# tryCatch(testFunctionWihoutTryCatch(x), error=function(e) NULL)
+
+# exclude subjects with only one goal
+id_oneGoal <- goalDf_wide$id[goalDf_wide$listNum ==1]
+factorScoreDF_clean <- factorScoreDF %>% filter(!id %in% id_oneGoal)
+
+# split the dataset by IDs and then get rid off the ID column
+splitDf <- split( factorScoreDF_clean, f = factorScoreDF_clean$id)
+#splitDf <- split( factorScoreDF, f = factorScoreDF$id)
+splitDf <- lapply(splitDf, function(x) subset(x, select = -id))
+
+# get the covariance matrix on factor scores across all goals
+factor_cov <- cov(subset(factorScoreDF_clean, select = -id))
+#factor_cov <- cov(subset(factorScoreDF, select = -id))
+
+# apply the distance function to each subject
+output <- lapply(splitDf, function(x) mahalanobisFun(x, factor_cov))
+#output <- lapply(splitDf, function(x) tryCatch(mahalanobisFun(x, factor_cov), error = function(e) NULL))
+
+# extract distance values
+distance_M <- unlist(output)
+
+# extract the number of pairs per subject
+pairNum <- lapply(output, function(x) length(as.vector(x)))
+pairNum <- unlist(pairNum)
+mean(pairNum)
+
+# generate a pairwise data frame
+id <- unique(factorScoreDF_clean$id)
+id_pair <- unlist(mapply(rep, id, pairNum))
+
+# pairId <- unlist(mapply(seq,1,pairNum))
+
+pairDf_M <- data.frame("subject_id" = id_pair,
+                     "distance_M" = distance_M)
+```
+
+```{r}
+# descriptive of all pairwise distance
+describe(pairDf_M$distance_M)
+
+pairDf_M %>% ggplot(aes(x = distance_M)) +
+    geom_histogram(fill   = "orange",
+                   colour = "black",
+                   alpha  = .6)
+```
+
+### variance partition
+```{r}
+# generate a multilevel model with subject as the random intercept
+mlm <-lmer(distance_M ~ 1 + (1|subject_id), data = pairDf_M)
+
+# calculate the variance partition coefficient and transform to ICC
+VarCorr(mlm) %>%
+  as_data_frame() %>%
+  mutate(icc=vcov/sum(vcov)) %>%
+  dplyr :: select(grp, icc)
+```
+
+### subject-level distance (mean & sd)
+```{r}
+# calculate mean distance per subject
+distDf_perSub_M <- pairDf_M %>%
+  group_by(subject_id) %>%
+  mutate(distMean = mean(distance_M),
+         distSd = sd(distance_M)) %>%
+  dplyr :: select(-distance_M)
+
+distDf_perSub_M <- aggregate(cbind(distMean,distSd) ~ subject_id, data = distDf_perSub_M, mean)
+
+# descriptive of subject-level mean distance
+describe(distDf_perSub_M$distMean)
+
+distDf_perSub_M %>% ggplot(aes(x = distMean)) +
+    geom_histogram(fill   = "orange",
+                   colour = "black",
+                   alpha  = .6)
+
+# descriptive of subject-level distance sd
+describe(distDf_perSub_M$distSd)
+
+distDf_perSub_M %>% ggplot(aes(x = distSd)) +
+    geom_histogram(fill   = "orange",
+                   colour = "black",
+                   alpha  = .6)
+```
+
+### subject level correlations (with raw factor scores)
+```{r fig.height=20, fig.width=20}
+# combine subject level data frame (individual differences, mean factor scores, mean distance)
+subjectDf <- left_join(subjectDf_factor, distDf_perSub_M, by = c("id" = "subject_id"))
+subjectDf <- left_join(subjectDf, indivDiffDf, by = "id")
+
+# generate a correlational matrix 
+corrM_subjectRaw <- cor(subjectDf[,-1],use = "pairwise")
+
+# visualization 
+corrplot(corrM_subjectRaw, method = "circle",number.cex = .7, addCoef.col = "black",type = "upper")
+```
+
+### subject level correlations (with variance)
+```{r fig.height=20, fig.width=20}
+# combine subject level data frame (individual differences, variance in factor scores, mean and sd in distance)
+subjectDf_sd <- left_join(subjectDf_factor_sd, distDf_perSub_M, by = c("id" = "subject_id"))
+subjectDf_sd <- left_join(subjectDf_sd, indivDiffDf, by = "id")
+
+# generate a correlational matrix 
+corrM_subjectSd <- cor(subjectDf_sd[,-1],use = "pairwise")
+
+# visualization 
+corrplot(corrM_subjectSd, method = "circle",number.cex = .7, addCoef.col = "black",type = "upper")
+```
