@@ -8,3 +8,7 @@ FYP_pilot_dataAnalysisPlan.html
 FYP_pilot_dataCleaning.html
 FYP_pilot_goalRating.html
 FYP_pilot_analysis.Rproj
+input/goalRating.csv
+input/goalRating_long.csv
+input/goalRating_long_R.csv
+otherDf.csv
